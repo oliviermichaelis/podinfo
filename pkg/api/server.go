@@ -145,8 +145,12 @@ func (s *Server) registerMiddlewares() {
 	s.router.Use(httpLogger.Handler)
 	s.router.Use(versionMiddleware)
 	if s.config.RandomDelay {
-		randomDelayer := NewRandomDelayMiddleware(s.config.RandomDelayMin, s.config.RandomDelayMax, s.config.RandomDelayUnit)
-		s.router.Use(randomDelayer.Handler)
+		latencyDelayer, err := NewLatencyMiddleware(s.logger)
+		if err != nil {
+			// This should hopefully never happen
+			fmt.Println(err.Error())
+		}
+		s.router.Use(latencyDelayer.Handler)
 	}
 	if s.config.RandomError {
 		s.router.Use(randomErrorMiddleware)
