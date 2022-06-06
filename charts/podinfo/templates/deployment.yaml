@@ -104,6 +104,8 @@ spec:
           - name: PODINFO_BACKEND_URL
             value: {{ .Values.backend }}
           {{- end }}
+          - name: PODINFO_QUEUE_NAME
+            value: {{ .Values.queueName }}
           ports:
             - name: http
               containerPort: {{ .Values.service.httpPort | default 9898 }}
@@ -155,8 +157,6 @@ spec:
             mountPath: {{ .Values.tls.certPath | default "/data/cert" }}
             readOnly: true
           {{- end }}
-          - name: latency
-            mountPath: "/latency"
           resources:
 {{ toYaml .Values.resources | indent 12 }}
     {{- with .Values.nodeSelector }}
@@ -179,6 +179,3 @@ spec:
         secret:
           secretName: {{ template "podinfo.tlsSecretName" . }}
       {{- end }}
-      - name: latency
-        configMap:
-          name: latency

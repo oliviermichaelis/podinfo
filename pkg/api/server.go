@@ -73,6 +73,7 @@ type Config struct {
 	Unready                   bool          `mapstructure:"unready"`
 	JWTSecret                 string        `mapstructure:"jwt-secret"`
 	CacheServer               string        `mapstructure:"cache-server"`
+	QueueName                 string        `mapstructure:"queue-name"`
 }
 
 type Server struct {
@@ -145,7 +146,7 @@ func (s *Server) registerMiddlewares() {
 	s.router.Use(httpLogger.Handler)
 	s.router.Use(versionMiddleware)
 	if s.config.RandomDelay {
-		latencyDelayer, err := NewLatencyMiddleware(s.logger)
+		latencyDelayer, err := NewLatencyMiddleware(s.logger, s.config.QueueName)
 		if err != nil {
 			// This should hopefully never happen
 			fmt.Println(err.Error())

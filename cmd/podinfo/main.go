@@ -54,6 +54,7 @@ func main() {
 	fs.Int("stress-memory", 0, "MB of data to load into memory")
 	fs.String("cache-server", "", "Redis address in the format 'tcp://<host>:<port>'")
 	fs.String("otel-service-name", "", "service name for reporting to open telemetry address, when not set tracing is disabled")
+	fs.String("queue-name", "", "rabbitmq queue name")
 
 	versionFlag := fs.BoolP("version", "v", false, "get version number")
 

@@ -1,19 +1,35 @@
 package api
 
 import (
-	"github.com/stefanprodan/podinfo/pkg/fscache"
-	"go.uber.org/zap"
-	"math"
+	"encoding/json"
+	"log"
 	"math/rand"
 	"net/http"
-	"strconv"
-	"strings"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	amqp "github.com/rabbitmq/amqp091-go"
+	"go.uber.org/zap"
 )
+
+const (
+	queueAddress = "amqp://user:oVHPh0Rz1UF7cWK7@10.1.1.253:5672"
+)
+
+var (
+	Gauge = prometheus.NewGauge(prometheus.GaugeOpts{
+		Subsystem: "faults",
+		Name:      "latency",
+	})
+)
+
+func init() {
+	prometheus.MustRegister(Gauge)
+}
 
 type LatencyMiddleware struct {
 	logger  *zap.Logger
-	watcher *fscache.Watcher
+	latency float64
 }
 
 func (l *LatencyMiddleware) Handler(next http.Handler) http.Handler {
@@ -24,44 +40,51 @@ func (l *LatencyMiddleware) Handler(next http.Handler) http.Handler {
 			return
 		}
 
-		v, ok := l.watcher.Cache.Load("latency")
-		if !ok {
-			l.logger.Error("unable to fetch /latency/latency file")
-			return
-		}
-
-		latencyString, ok := v.(string)
-		if !ok {
-			l.logger.Error("failed to type assert latency file content to string")
-			return
-		}
-
-		latency, err := strconv.Atoi(strings.TrimSpace(latencyString))
-		if err != nil {
-			l.logger.Error("failed to convert latency to int")
-			return
-		}
-
-		jitterRange := float64(latency) * 0.2 // 20 percent of positive jitter
-		jitter := rand.Intn(int(math.Ceil(jitterRange)))
-
-		time.Sleep(time.Duration(latency+jitter) * time.Millisecond)
+		latency := l.latency
+		Gauge.Set(latency)
+		time.Sleep(time.Duration(latency) * time.Millisecond)
 		next.ServeHTTP(w, r)
 	})
 }
 
-func NewLatencyMiddleware(logger *zap.Logger) (*LatencyMiddleware, error) {
-	w, err := fscache.NewWatch("/latency")
+func NewLatencyMiddleware(logger *zap.Logger, queueName string) (*LatencyMiddleware, error) {
+	conn, err := amqp.Dial(queueAddress)
 	if err != nil {
-		return nil, err
+		log.Fatal(err)
 	}
 
-	w.Watch()
-	logger.Info("started to watch /latency")
+	ch, err := conn.Channel()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	delivery, err := ch.Consume(queueName, "", true, false, false, false, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	l := &LatencyMiddleware{
+		logger: logger,
+	}
+
+	go func() {
+		logger.Info("started to consume messages", zap.String("queue", queueName))
+		for d := range delivery {
+			type v struct {
+				Value int `json:"value"`
+			}
+
+			var value v
+			if err := json.Unmarshal(d.Body, &value); err != nil {
+				log.Fatal(err)
+			}
+
+			l.latency = float64(value.Value)
+			logger.Info("received latency", zap.Int("latency", value.Value))
+		}
+	}()
+
 	rand.Seed(time.Now().Unix())
 
-	return &LatencyMiddleware{
-		logger:  logger,
-		watcher: w,
-	}, nil
+	return l, nil
 }
