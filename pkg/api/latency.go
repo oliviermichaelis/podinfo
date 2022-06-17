@@ -5,6 +5,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -28,6 +29,7 @@ func init() {
 }
 
 type LatencyMiddleware struct {
+	sync.RWMutex
 	logger  *zap.Logger
 	latency float64
 }
@@ -39,6 +41,9 @@ func (l *LatencyMiddleware) Handler(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+
+		l.RLock()
+		defer l.RUnlock()
 
 		latency := l.latency
 		Gauge.Set(latency)
@@ -58,7 +63,20 @@ func NewLatencyMiddleware(logger *zap.Logger, queueName string) (*LatencyMiddlew
 		log.Fatal(err)
 	}
 
-	delivery, err := ch.Consume(queueName, "", true, false, false, false, nil)
+	if err := ch.ExchangeDeclare(queueName, amqp.ExchangeFanout, false, false, false, false, nil); err != nil {
+		return nil, err
+	}
+
+	queue, err := ch.QueueDeclare("", false, false, false, false, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if err = ch.QueueBind(queue.Name, "", queueName, false, nil); err != nil {
+		return nil, err
+	}
+
+	delivery, err := ch.Consume(queue.Name, "", true, false, false, false, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -79,7 +97,9 @@ func NewLatencyMiddleware(logger *zap.Logger, queueName string) (*LatencyMiddlew
 				log.Fatal(err)
 			}
 
+			l.Lock()
 			l.latency = float64(value.Value)
+			l.Unlock()
 			logger.Info("received latency", zap.Int("latency", value.Value))
 		}
 	}()
