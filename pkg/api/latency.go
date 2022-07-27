@@ -48,6 +48,11 @@ func (l *LatencyMiddleware) Handler(next http.Handler) http.Handler {
 		latency := l.distribution.Rand()
 		l.RUnlock()
 
+		// Cap the latency to 5000ms
+		if latency > 5000 {
+			latency = 5000
+		}
+
 		Histogram.Observe(latency)
 		time.Sleep(time.Duration(latency) * time.Millisecond)
 		next.ServeHTTP(w, r)
