@@ -2,21 +2,19 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"gonum.org/v1/gonum/stat/distuv"
 	"log"
 	"math"
 	"math/rand"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"go.uber.org/zap"
-)
-
-const (
-	queueAddress = "amqp://user:oVHPh0Rz1UF7cWK7@10.1.1.253:5672"
 )
 
 var (
@@ -67,10 +65,31 @@ func (l *LatencyMiddleware) setDistribution(p50Latency, p99Latency float64) {
 	l.distribution.Mu = (math.Log(p50Latency)*p99 - math.Log(p99Latency)*p50) / (p99 - p50)
 }
 
-func NewLatencyMiddleware(logger *zap.Logger, queueName string) (*LatencyMiddleware, error) {
-	conn, err := amqp.Dial(queueAddress)
+func NewLatencyMiddleware(logger *zap.Logger, queueName, endpoint, username, password string) (*LatencyMiddleware, error) {
+	if endpoint == "" {
+		log.Fatal("endpoint is empty")
+	}
+	if username == "" {
+		log.Fatal("username is empty")
+	}
+	if password == "" {
+		log.Fatal("password is empty")
+	}
+
+	var scheme string
+	if strings.HasPrefix(endpoint, "amqps://") {
+		scheme = "amqps://"
+	} else if strings.HasPrefix(endpoint, "amqp://") {
+		scheme = "amqp://"
+	} else {
+		logger.Panic("unexpected queue scheme")
+	}
+
+	endpoint = strings.TrimPrefix(endpoint, scheme)
+	address := fmt.Sprintf("%s%s:%s@%s", scheme, username, password, endpoint)
+	conn, err := amqp.Dial(address)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err, zap.String("address", address))
 	}
 
 	ch, err := conn.Channel()

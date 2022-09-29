@@ -106,6 +106,21 @@ spec:
           {{- end }}
           - name: PODINFO_QUEUE_NAME
             value: {{ .Values.queueName }}
+          - name: PODINFO_QUEUE_ENDPOINT
+            valueFrom:
+              secretKeyRef:
+                name: rabbitmq
+                key: endpoint
+          - name: PODINFO_QUEUE_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: rabbitmq
+                key: username
+          - name: PODINFO_QUEUE_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: rabbitmq
+                key: password
           ports:
             - name: http
               containerPort: {{ .Values.service.httpPort | default 9898 }}

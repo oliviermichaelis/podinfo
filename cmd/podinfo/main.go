@@ -55,6 +55,9 @@ func main() {
 	fs.String("cache-server", "", "Redis address in the format 'tcp://<host>:<port>'")
 	fs.String("otel-service-name", "", "service name for reporting to open telemetry address, when not set tracing is disabled")
 	fs.String("queue-name", "", "rabbitmq queue name")
+	fs.String("queue-endpoint", "", "rabbitmq endpoint")
+	fs.String("queue-username", "", "rabbitmq username")
+	fs.String("queue-password", "", "rabbitmq password")
 
 	versionFlag := fs.BoolP("version", "v", false, "get version number")
 
