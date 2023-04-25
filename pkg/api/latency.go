@@ -29,26 +29,45 @@ func init() {
 }
 
 type Quantiles struct {
-	P50 int `json:"p50"`
-	P99 int `json:"p99"`
+	SuccessRate float64 `json:"success_rate"`
+	P50         int     `json:"p50"`
+	P99         int     `json:"p99"`
 }
 
 type LatencyMiddleware struct {
 	sync.RWMutex
 	logger       *zap.Logger
-	latency      float64
+	successRate  float64
 	distribution distuv.LogNormal
 }
 
 func (l *LatencyMiddleware) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip all requests not coming from the load generator
+		if r.RequestURI != "/" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		l.RLock()
 		latency := l.distribution.Rand()
+		success := l.successRate
 		l.RUnlock()
 
-		// Cap the latency to 5000ms
-		if latency > 5000 {
-			latency = 5000
+		// Cap the latency to 7000ms
+		if latency > 7000 {
+			latency = 7000
+		}
+
+		// rand.Float64() takes a random number from a right-open interval
+		if success != 1.0 {
+			r := rand.Float64()
+			if r > success {
+				time.Sleep(time.Duration(latency) * time.Millisecond)
+				w.WriteHeader(http.StatusInternalServerError)
+				Histogram.Observe(latency)
+				return
+			}
 		}
 
 		Histogram.Observe(latency)
@@ -63,6 +82,10 @@ func (l *LatencyMiddleware) setDistribution(p50Latency, p99Latency float64) {
 
 	l.distribution.Sigma = (math.Log(p99Latency) - math.Log(p50Latency)) / (p99 - p50)
 	l.distribution.Mu = (math.Log(p50Latency)*p99 - math.Log(p99Latency)*p50) / (p99 - p50)
+}
+
+func (l *LatencyMiddleware) setSuccessRate(successRate float64) {
+	l.successRate = successRate
 }
 
 func NewLatencyMiddleware(logger *zap.Logger, queueName, endpoint, username, password string) (*LatencyMiddleware, error) {
@@ -131,6 +154,7 @@ func NewLatencyMiddleware(logger *zap.Logger, queueName, endpoint, username, pas
 
 			l.Lock()
 			l.setDistribution(float64(q.P50), float64(q.P99))
+			l.setSuccessRate(q.SuccessRate)
 			l.Unlock()
 			logger.Info("received quantiles", zap.Int("P50", q.P50), zap.Int("P99", q.P99), zap.Float64("sigma", l.distribution.Sigma), zap.Float64("mu", l.distribution.Mu))
 		}
